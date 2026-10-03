@@ -123,10 +123,29 @@ function normalizeUnresolved(unresolved) {
     }));
 }
 
-function isAlreadyKeyed(stockClass, proposal) {
+export function isAlreadyKeyed(stockClass, proposal) {
+    const proposalNote = normalizeSourceNote(proposal.note);
+
+    // Type and quantity are not a transaction identity: two separate sales can
+    // legitimately contain the same number of animals. Require the human-readable
+    // source note as well so only the same evidenced movement is suppressed.
+    if (!proposalNote) {
+        return false;
+    }
+
     return (stockClass.movements ?? []).some(
-        (movement) => movement.type === proposal.type && Number(movement.quantity) === proposal.quantity,
+        (movement) =>
+            movement.type === proposal.type &&
+            Number(movement.quantity) === proposal.quantity &&
+            normalizeSourceNote(movement.note) === proposalNote,
     );
+}
+
+function normalizeSourceNote(note) {
+    return String(note ?? '')
+        .trim()
+        .toLocaleLowerCase('en-NZ')
+        .replace(/\s+/g, ' ');
 }
 
 export function buildReconciliationPrompt(reportData) {
