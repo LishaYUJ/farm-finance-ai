@@ -53,7 +53,8 @@ existing movement must not be counted a second time.
 - Verified the production frontend build and the PHP test suite.
 - Verified the page with the parser team's sample JSON: 14 proposals were added,
   3 were sent to review, and the existing lamb movement was not counted twice.
-- Pending: add a real `ANTHROPIC_API_KEY` to `.env` to verify the final Claude-written
-  commentary.
+- Live commentary remains optional: Demo mode now produces a deterministic report
+  without a key, while Live mode can be exercised with the developer's own
+  `ANTHROPIC_API_KEY`.
 - Integrated the report generator with the parser team's live response from
   `POST /api/stock/parse`; no manual JSON paste step is required.
