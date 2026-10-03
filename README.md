@@ -70,7 +70,7 @@ reconciliation.
 
 ## Local setup
 
-Prerequisites: PHP 8.3+, Composer, Node 20.12+ and Yarn.
+Prerequisites: PHP 8.3+, Composer, Node 20.19+ and Yarn.
 
 ```bash
 git clone https://github.com/LishaYUJ/farm-finance-ai.git

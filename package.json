@@ -2,7 +2,7 @@
     "$schema": "https://www.schemastore.org/package.json",
     "private": true,
     "engines": {
-        "node": ">=20.12"
+        "node": ">=20.19"
     },
     "type": "module",
     "scripts": {
