@@ -5,22 +5,15 @@ namespace App\Http\Controllers;
 use App\Models\StockClass;
 use App\Models\StockMovement;
 use App\Models\StockRecord;
+use App\Services\DemoStockResponder;
+use App\Services\StockProposalValidator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
 class StockController extends Controller
 {
-    private const MOVEMENT_TYPES = ['birth', 'purchase', 'death', 'sale'];
-
-    private const PROPOSAL_FLAGS = [
-        'duplicate',
-        'superseded',
-        'same_event',
-        'source_mislabelled',
-        'quantity_estimated',
-    ];
-
     private const PARSE_SYSTEM_PROMPT = <<<'SYSTEM'
         You are a stock reconciliation clerk at a rural accounting practice in New Zealand. You read
         a farmer's raw records - diary notes, sale dockets, text messages - and turn them into stock
@@ -33,6 +26,8 @@ class StockController extends Controller
 
         Reply with JSON only. No prose, no markdown fences.
         SYSTEM;
+
+    private const REPORT_SYSTEM_PROMPT = 'You are a careful livestock reconciliation assistant. Report only the supplied facts and calculations.';
 
     public function index(): JsonResponse
     {
@@ -65,107 +60,151 @@ class StockController extends Controller
     /**
      * Read the whole paper trail and propose the movements it implies.
      *
-     * Claude does the deciphering; everything it hands back is re-checked here
+     * Demo and Live sources converge before validation: everything is re-checked
      * against the database before it goes to the browser. Anything that fails a
      * check is reported in `unresolved` rather than quietly dropped.
      */
-    public function parseRecords(): JsonResponse
-    {
+    public function parseRecords(
+        StockProposalValidator $validator,
+        DemoStockResponder $demoResponder,
+    ): JsonResponse {
         $classes = StockClass::orderBy('id')->get();
         $records = StockRecord::orderBy('recorded_on')->orderBy('id')->get();
+        $demoMode = (bool) config('services.anthropic.demo_mode');
 
         try {
-            $text = AiController::ask($this->parsePrompt($classes, $records), self::PARSE_SYSTEM_PROMPT);
+            if ($demoMode) {
+                $parsed = $demoResponder->parseResponse();
+            } else {
+                $text = AiController::ask($this->parsePrompt($classes, $records), self::PARSE_SYSTEM_PROMPT);
+                $parsed = $this->decodeModelJson($text);
+            }
         } catch (RuntimeException $e) {
             return response()->json(['error' => $e->getMessage()], $e->getCode() ?: 500);
         }
 
-        // We asked for bare JSON, but models like to wrap it in a fence anyway.
+        if (! is_array($parsed)) {
+            return response()->json([
+                'error' => 'Anthropic did not return valid JSON. The raw reply is below.',
+                'raw' => $text ?? null,
+            ], 502);
+        }
+
+        return response()->json([
+            ...$validator->validate($parsed, $classes, $records),
+            'ai_mode' => $demoMode ? 'demo' : 'live',
+            'meta' => $demoMode
+                ? ['source' => 'recorded_fixture', 'fixture' => DemoStockResponder::FIXTURE]
+                : ['provider' => 'anthropic', 'model' => config('services.anthropic.model')],
+        ]);
+    }
+
+    /**
+     * Generate narrative from a constrained reconciliation payload instead of
+     * exposing the generic prompt proxy to a public browser.
+     */
+    public function generateReport(Request $request, DemoStockResponder $demoResponder): JsonResponse
+    {
+        $rules = [
+            'report' => ['required', 'array'],
+            'report.classes' => ['required', 'array', 'max:50'],
+            'report.classes.*.stock_class' => ['required', 'string', 'max:100'],
+            'report.classes.*.opening' => ['required', 'integer', 'min:0'],
+            'report.classes.*.births' => ['required', 'integer', 'min:0'],
+            'report.classes.*.purchases' => ['required', 'integer', 'min:0'],
+            'report.classes.*.deaths' => ['required', 'integer', 'min:0'],
+            'report.classes.*.sales' => ['required', 'integer', 'min:0'],
+            'report.classes.*.calculated_closing' => ['required', 'integer'],
+            'report.classes.*.recorded_closing' => ['required', 'integer', 'min:0'],
+            'report.classes.*.difference' => ['required', 'integer'],
+            'report.classes.*.status' => ['required', 'in:reconciled,unreconciled'],
+            'report.accepted_proposals' => ['present', 'array', 'max:100'],
+            'report.review_proposals' => ['present', 'array', 'max:100'],
+            'report.unresolved' => ['present', 'array', 'max:100'],
+            'report.unresolved.*.record_ids' => ['required', 'array', 'max:20'],
+            'report.unresolved.*.record_ids.*' => ['integer', 'min:1'],
+            'report.unresolved.*.reason' => ['required', 'string', 'max:1000'],
+            'report.already_keyed' => ['present', 'array', 'max:100'],
+            'report.counts' => ['required', 'array'],
+            'report.counts.*' => ['integer', 'min:0'],
+        ];
+
+        foreach (['accepted_proposals', 'review_proposals', 'already_keyed'] as $key) {
+            $rules["report.{$key}.*.record_ids"] = ['required', 'array', 'min:1', 'max:20'];
+            $rules["report.{$key}.*.record_ids.*"] = ['integer', 'min:1'];
+            $rules["report.{$key}.*.stock_class"] = ['required', 'string', 'max:100'];
+            $rules["report.{$key}.*.stock_class_id"] = ['required', 'integer', 'min:1'];
+            $rules["report.{$key}.*.type"] = ['required', 'in:birth,purchase,death,sale'];
+            $rules["report.{$key}.*.confidence"] = ['nullable', 'numeric', 'between:0,1'];
+            $rules["report.{$key}.*.quantity"] = ['required', 'integer', 'min:1'];
+            $rules["report.{$key}.*.note"] = ['required', 'string', 'max:500'];
+            $rules["report.{$key}.*.include"] = ['required', 'boolean'];
+            $rules["report.{$key}.*.flag"] = ['nullable', 'in:duplicate,superseded,same_event,source_mislabelled,quantity_estimated'];
+            $rules["report.{$key}.*.reasoning"] = ['required', 'string', 'max:1000'];
+        }
+
+        $validated = $request->validate($rules);
+
+        foreach ($validated['report']['classes'] as $index => $stockClass) {
+            $calculated = $stockClass['opening'] + $stockClass['births'] + $stockClass['purchases']
+                - $stockClass['deaths'] - $stockClass['sales'];
+            $difference = $calculated - $stockClass['recorded_closing'];
+            $status = $difference === 0 ? 'reconciled' : 'unreconciled';
+
+            if ($stockClass['calculated_closing'] !== $calculated ||
+                $stockClass['difference'] !== $difference ||
+                $stockClass['status'] !== $status) {
+                throw ValidationException::withMessages([
+                    "report.classes.{$index}" => 'Reconciliation totals are internally inconsistent.',
+                ]);
+            }
+        }
+
+        $demoMode = (bool) config('services.anthropic.demo_mode');
+
+        try {
+            $text = $demoMode
+                ? $demoResponder->report($validated['report'])
+                : AiController::ask(
+                    $this->reportPrompt($validated['report']),
+                    self::REPORT_SYSTEM_PROMPT,
+                );
+        } catch (RuntimeException $e) {
+            return response()->json(['error' => $e->getMessage()], $e->getCode() ?: 500);
+        }
+
+        return response()->json([
+            'text' => $text,
+            'ai_mode' => $demoMode ? 'demo' : 'live',
+            'meta' => $demoMode
+                ? ['source' => 'deterministic_renderer']
+                : ['provider' => 'anthropic', 'model' => config('services.anthropic.model')],
+        ]);
+    }
+
+    private function decodeModelJson(string $text): mixed
+    {
+        // We ask for bare JSON, but models can still wrap it in a Markdown fence.
         $json = trim($text);
         if (str_starts_with($json, '```')) {
             $json = trim(preg_replace('/^```[a-z]*\s*|\s*```$/i', '', $json));
         }
 
-        $parsed = json_decode($json, true);
-        if (! is_array($parsed)) {
-            return response()->json([
-                'error' => 'Claude did not return valid JSON. The raw reply is below.',
-                'raw' => $text,
-            ], 502);
-        }
-
-        return response()->json($this->validateProposals($parsed, $classes, $records));
+        return json_decode($json, true);
     }
 
-    /**
-     * Re-check Claude's output against the database. Stock class ids in
-     * particular are resolved here, never taken from the model.
-     */
-    private function validateProposals(array $parsed, $classes, $records): array
+    private function reportPrompt(array $report): string
     {
-        $classIds = $classes->mapWithKeys(fn ($c) => [mb_strtolower($c->name) => $c->id]);
-        $recordIds = $records->pluck('id');
+        $json = json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
 
-        $proposals = [];
-        $unresolved = [];
+        return <<<PROMPT
+        Write a concise livestock reconciliation report for a New Zealand rural accountant.
 
-        // Anything Claude itself could not pin down comes through as-is. Entries
-        // naming no record are summaries rather than unresolved records, so drop them.
-        foreach ($parsed['unresolved'] ?? [] as $item) {
-            $ids = array_values(array_intersect(
-                array_map('intval', (array) ($item['record_ids'] ?? [])),
-                $recordIds->all(),
-            ));
+        Treat every supplied number as fixed. Do not recalculate, alter, invent or omit a movement to make a stock class reconcile. Start with a short summary, give each stock class its own section, list every review_proposal and unresolved item under "Needs review", identify already_keyed items separately, and state exact differences for unreconciled classes. Use professional plain text without a Markdown table.
 
-            if ($ids) {
-                $unresolved[] = [
-                    'record_ids' => $ids,
-                    'reason' => (string) ($item['reason'] ?? 'No reason given.'),
-                ];
-            }
-        }
-
-        foreach ($parsed['proposals'] ?? [] as $proposal) {
-            $className = mb_strtolower(trim((string) ($proposal['stock_class'] ?? '')));
-            $type = mb_strtolower(trim((string) ($proposal['type'] ?? '')));
-            $quantity = $proposal['quantity'] ?? null;
-
-            $ids = array_values(array_intersect(
-                array_map('intval', (array) ($proposal['record_ids'] ?? [])),
-                $recordIds->all(),
-            ));
-
-            $reject = match (true) {
-                ! $classIds->has($className) => "Unknown stock class '{$className}'.",
-                ! in_array($type, self::MOVEMENT_TYPES, true) => "Unknown movement type '{$type}'.",
-                ! is_numeric($quantity) || (int) $quantity < 1 => 'Quantity was missing or not a positive whole number.',
-                default => null,
-            };
-
-            if ($reject) {
-                $unresolved[] = ['record_ids' => $ids, 'reason' => $reject];
-
-                continue;
-            }
-
-            $flag = mb_strtolower(trim((string) ($proposal['flag'] ?? '')));
-            $flag = in_array($flag, self::PROPOSAL_FLAGS, true) ? $flag : null;
-
-            $proposals[] = [
-                'record_ids' => $ids,
-                'stock_class' => $classes->firstWhere('id', $classIds[$className])->name,
-                'stock_class_id' => $classIds[$className],
-                'type' => $type,
-                'confidence' => round(min(1, max(0, (float) ($proposal['confidence'] ?? 0.5))), 2),
-                'quantity' => (int) $quantity,
-                'note' => (string) ($proposal['note'] ?? ''),
-                'include' => (bool) ($proposal['include'] ?? true),
-                'flag' => $flag,
-                'reasoning' => (string) ($proposal['reasoning'] ?? ''),
-            ];
-        }
-
-        return ['proposals' => $proposals, 'unresolved' => $unresolved];
+        Reconciliation data:
+        {$json}
+        PROMPT;
     }
 
     private function parsePrompt($classes, $records): string

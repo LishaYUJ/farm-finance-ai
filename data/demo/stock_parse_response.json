@@ -1,0 +1,197 @@
+{
+  "proposals": [
+    {
+      "record_ids": [1],
+      "stock_class": "Ewes",
+      "type": "death",
+      "confidence": 0.99,
+      "quantity": 2,
+      "note": "Diary 14 Aug 2025",
+      "include": true,
+      "flag": null,
+      "reasoning": "Two ewes were put down after bearing trouble."
+    },
+    {
+      "record_ids": [2],
+      "stock_class": "Cattle",
+      "type": "death",
+      "confidence": 0.99,
+      "quantity": 1,
+      "note": "Diary 3 Sep 2025",
+      "include": true,
+      "flag": null,
+      "reasoning": "One cow was lost during calving."
+    },
+    {
+      "record_ids": [3],
+      "stock_class": "Lambs",
+      "type": "birth",
+      "confidence": 0.99,
+      "quantity": 1240,
+      "note": "Docking tally, diary 6 Oct 2025",
+      "include": true,
+      "flag": null,
+      "reasoning": "The docking tally is the count of lambs born."
+    },
+    {
+      "record_ids": [4],
+      "stock_class": "Lambs",
+      "type": "death",
+      "confidence": 0.9,
+      "quantity": 12,
+      "note": "Diary 19 Oct 2025",
+      "include": true,
+      "flag": "quantity_estimated",
+      "reasoning": "A dozen dead lambs is interpreted as 12."
+    },
+    {
+      "record_ids": [5],
+      "stock_class": "Ewes",
+      "type": "death",
+      "confidence": 0.99,
+      "quantity": 3,
+      "note": "Diary 24 Oct 2025",
+      "include": true,
+      "flag": null,
+      "reasoning": "Three ewes were found dead in the swamp paddock."
+    },
+    {
+      "record_ids": [6],
+      "stock_class": "Cattle",
+      "type": "birth",
+      "confidence": 0.98,
+      "quantity": 62,
+      "note": "Calving tally, diary 28 Oct 2025",
+      "include": true,
+      "flag": null,
+      "reasoning": "Calves on the ground are cattle births."
+    },
+    {
+      "record_ids": [7],
+      "stock_class": "Lambs",
+      "type": "death",
+      "confidence": 0.99,
+      "quantity": 2,
+      "note": "Home kill, diary 30 Nov 2025",
+      "include": true,
+      "flag": null,
+      "reasoning": "Home-killed lambs leave the stock count as deaths rather than sales."
+    },
+    {
+      "record_ids": [8],
+      "stock_class": "Lambs",
+      "type": "sale",
+      "confidence": 0.99,
+      "quantity": 210,
+      "note": "Docket S-40102, 12 Dec 2025",
+      "include": true,
+      "flag": null,
+      "reasoning": "The sale docket records 210 lambs sold."
+    },
+    {
+      "record_ids": [9],
+      "stock_class": "Lambs",
+      "type": "sale",
+      "confidence": 0.99,
+      "quantity": 350,
+      "note": "Docket S-40233, 20 Jan 2026",
+      "include": true,
+      "flag": null,
+      "reasoning": "The sale docket records 350 lambs sold."
+    },
+    {
+      "record_ids": [10],
+      "stock_class": "Cattle",
+      "type": "death",
+      "confidence": 0.98,
+      "quantity": 2,
+      "note": "Diary 14 Feb 2026",
+      "include": true,
+      "flag": null,
+      "reasoning": "Two cows died during dry conditions."
+    },
+    {
+      "record_ids": [11, 12],
+      "stock_class": "Lambs",
+      "type": "sale",
+      "confidence": 0.99,
+      "quantity": 180,
+      "note": "Duplicate docket S-40417, 17 and 24 Feb 2026",
+      "include": false,
+      "flag": "duplicate",
+      "reasoning": "Both records have the same docket number, quantity and value, so they describe one sale requiring confirmation."
+    },
+    {
+      "record_ids": [13],
+      "stock_class": "Ewes",
+      "type": "sale",
+      "confidence": 0.99,
+      "quantity": 145,
+      "note": "Docket S-40429, 26 Feb 2026",
+      "include": true,
+      "flag": null,
+      "reasoning": "Cull ewes remain in the Ewes stock class and were sold."
+    },
+    {
+      "record_ids": [14],
+      "stock_class": "Cattle",
+      "type": "death",
+      "confidence": 0.98,
+      "quantity": 3,
+      "note": "Diary 26 Feb 2026",
+      "include": true,
+      "flag": null,
+      "reasoning": "Three more cows died during the dry period."
+    },
+    {
+      "record_ids": [15, 16],
+      "stock_class": "Cattle",
+      "type": "sale",
+      "confidence": 0.99,
+      "quantity": 38,
+      "note": "Docket S-40488 and diary confirmation, 5–12 Mar 2026",
+      "include": false,
+      "flag": "same_event",
+      "reasoning": "The docket and diary describe the same group of 38 steers leaving the farm."
+    },
+    {
+      "record_ids": [17],
+      "stock_class": "Ewes",
+      "type": "purchase",
+      "confidence": 0.99,
+      "quantity": 120,
+      "note": "Purchase docket P-11873, 9 Mar 2026",
+      "include": true,
+      "flag": "source_mislabelled",
+      "reasoning": "The row is labelled as a sale docket, but its body clearly identifies a purchase of 120 ewes."
+    },
+    {
+      "record_ids": [18],
+      "stock_class": "Lambs",
+      "type": "sale",
+      "confidence": 0.99,
+      "quantity": 240,
+      "note": "Docket S-40551, 18 Mar 2026",
+      "include": true,
+      "flag": null,
+      "reasoning": "The sale docket records 240 lambs sold."
+    },
+    {
+      "record_ids": [19, 20],
+      "stock_class": "Cattle",
+      "type": "sale",
+      "confidence": 0.99,
+      "quantity": 38,
+      "note": "Neighbour cull cow sale corrected 5 Jun 2026",
+      "include": false,
+      "flag": "superseded",
+      "reasoning": "The later text corrects the original quantity from 40 cull cows to 38."
+    }
+  ],
+  "unresolved": [
+    {
+      "record_ids": [21],
+      "reason": "The note says about 15 ewes were lost and probably more, so no final defensible quantity is available."
+    }
+  ]
+}

@@ -6,6 +6,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\RateLimiter;
 use RuntimeException;
 
 /**
@@ -19,9 +20,15 @@ class AiController extends Controller
 {
     public function __invoke(Request $request): JsonResponse
     {
+        if (! config('services.anthropic.allow_generic_endpoint')) {
+            return response()->json([
+                'error' => 'The generic AI endpoint is disabled. Use a task-specific endpoint.',
+            ], 403);
+        }
+
         $validated = $request->validate([
-            'system' => ['nullable', 'string'],
-            'prompt' => ['required', 'string'],
+            'system' => ['nullable', 'string', 'max:'.config('services.anthropic.max_system_chars')],
+            'prompt' => ['required', 'string', 'max:'.config('services.anthropic.max_prompt_chars')],
         ]);
 
         try {
@@ -30,7 +37,11 @@ class AiController extends Controller
             return response()->json(['error' => $e->getMessage()], $e->getCode() ?: 500);
         }
 
-        return response()->json(['text' => $text]);
+        return response()->json([
+            'text' => $text,
+            'ai_mode' => 'live',
+            'meta' => ['provider' => 'anthropic', 'model' => config('services.anthropic.model')],
+        ]);
     }
 
     /**
@@ -45,17 +56,35 @@ class AiController extends Controller
         // which kills the request mid-call regardless of the HTTP timeout below.
         set_time_limit(180);
 
+        if (config('services.anthropic.demo_mode')) {
+            throw new RuntimeException(
+                'Live AI is disabled in demo mode. Set AI_DEMO_MODE=false only in a protected environment.',
+                503,
+            );
+        }
+
+        if (mb_strlen($prompt) > config('services.anthropic.max_prompt_chars') ||
+            mb_strlen($system ?? '') > config('services.anthropic.max_system_chars')) {
+            throw new RuntimeException('AI request exceeds the configured input limit.', 422);
+        }
+
+        $dailyLimit = max(1, (int) config('services.anthropic.daily_request_limit'));
+        $dailyKey = 'anthropic:daily:'.now()->format('Y-m-d');
+        if (RateLimiter::tooManyAttempts($dailyKey, $dailyLimit)) {
+            throw new RuntimeException('The daily AI request budget has been reached.', 429);
+        }
+
         $apiKey = config('services.anthropic.key');
         if (! $apiKey || str_starts_with($apiKey, 'sk-ant-your-key')) {
             throw new RuntimeException(
-                'No Anthropic API key configured. Set ANTHROPIC_API_KEY in .env (ask a Figgie for the key).',
-                500,
+                'Anthropic is not configured. Set ANTHROPIC_API_KEY in .env and clear the configuration cache.',
+                503,
             );
         }
 
         $body = [
-            'model' => 'claude-sonnet-4-6',
-            'max_tokens' => 4096,
+            'model' => config('services.anthropic.model'),
+            'max_tokens' => max(1, (int) config('services.anthropic.max_tokens')),
             'messages' => [
                 ['role' => 'user', 'content' => $prompt],
             ],
@@ -63,6 +92,8 @@ class AiController extends Controller
         if (! empty($system)) {
             $body['system'] = $system;
         }
+
+        RateLimiter::hit($dailyKey, max(1, now()->diffInSeconds(now()->endOfDay()) + 1));
 
         try {
             $response = Http::withHeaders([

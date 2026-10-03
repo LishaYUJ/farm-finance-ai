@@ -16,6 +16,14 @@ return [
 
     'anthropic' => [
         'key' => env('ANTHROPIC_API_KEY'),
+        'model' => env('ANTHROPIC_MODEL', 'claude-sonnet-4-6'),
+        'demo_mode' => env('AI_DEMO_MODE', true),
+        'allow_generic_endpoint' => env('AI_ALLOW_GENERIC_ENDPOINT', false),
+        'max_tokens' => (int) env('AI_MAX_OUTPUT_TOKENS', 1200),
+        'max_prompt_chars' => (int) env('AI_MAX_PROMPT_CHARS', 20000),
+        'max_system_chars' => (int) env('AI_MAX_SYSTEM_CHARS', 4000),
+        'requests_per_minute' => (int) env('AI_REQUESTS_PER_MINUTE', 5),
+        'daily_request_limit' => (int) env('AI_DAILY_REQUEST_LIMIT', 100),
     ],
 
     'postmark' => [

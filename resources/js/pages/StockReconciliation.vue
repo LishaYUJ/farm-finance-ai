@@ -3,7 +3,6 @@ import axios from "axios";
 import { computed, onMounted, ref } from "vue";
 import { shortDate } from "../format";
 import {
-    buildReconciliationPrompt,
     parseProposalPayload,
     prepareReconciliationReport,
 } from "../stockReconciliationReport";
@@ -97,7 +96,13 @@ async function removeMovement(stockClass, movement) {
 const parsing = ref(false);
 const parseError = ref('');
 const parseResult = ref(null);
+const parseAiMode = ref(null);
 const copied = ref(false);
+const reportLoading = ref(false);
+const reportError = ref("");
+const reportText = ref("");
+const reportData = ref(null);
+const reportAiMode = ref(null);
 
 // The parse itself just fires and waits on the response, but a bar that
 // creeps toward 100% over the ~30s the model usually takes reassures the
@@ -110,9 +115,11 @@ async function parseRecords() {
     parsing.value = true;
     parseError.value = '';
     parseResult.value = null;
+    parseAiMode.value = null;
     reportError.value = "";
     reportText.value = "";
     reportData.value = null;
+    reportAiMode.value = null;
     parseProgress.value = 0;
 
     const startedAt = Date.now();
@@ -125,6 +132,7 @@ async function parseRecords() {
     try {
         const { data } = await axios.post('/api/stock/parse');
         parseResult.value = data;
+        parseAiMode.value = data.ai_mode ?? null;
     } catch (e) {
         const body = e.response?.data;
         parseError.value = body?.raw ? `${body.error}\n\n${body.raw}` : (body?.error ?? e.message);
@@ -148,6 +156,7 @@ async function generateReport() {
     reportError.value = "";
     reportText.value = "";
     reportData.value = null;
+    reportAiMode.value = null;
 
     try {
         const proposals = parseProposalPayload(parseResult.value);
@@ -157,12 +166,12 @@ async function generateReport() {
             parseResult.value.unresolved,
         );
         reportData.value = preparedReport;
-        const { data } = await axios.post("/api/ai", {
-            system: "You are a careful livestock reconciliation assistant. Report only the supplied facts and calculations.",
-            prompt: buildReconciliationPrompt(preparedReport),
+        const { data } = await axios.post("/api/stock/report", {
+            report: preparedReport,
         });
 
         reportText.value = data.text;
+        reportAiMode.value = data.ai_mode ?? null;
     } catch (error) {
         reportError.value = error.response?.data?.error ?? error.message;
     } finally {
@@ -507,6 +516,15 @@ const sourceBadgeClass = {
                     <div class="flex items-center justify-between gap-2 border-b border-fg-pale-grey px-4 py-2">
                         <h3 class="text-sm font-semibold">
                             Proposed movements
+                            <span
+                                v-if="parseAiMode"
+                                class="ml-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                                :class="parseAiMode === 'demo'
+                                    ? 'bg-fg-warning-15 text-fg-warning-text'
+                                    : 'bg-fg-positive-15 text-fg-positive-dark'"
+                            >
+                                {{ parseAiMode === 'demo' ? 'Demo response' : 'Live AI' }}
+                            </span>
                             <span class="font-normal text-fg-light-grey">
                                 — {{ parseResult.proposals.length }} proposed,
                                 {{ parseResult.unresolved.length }} unresolved
@@ -527,7 +545,18 @@ const sourceBadgeClass = {
         <section v-if="parseResult" class="mt-4 rounded border border-fg-muted-grey bg-white p-4">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <h3 class="text-sm font-semibold">AI reconciliation report</h3>
+                    <h3 class="text-sm font-semibold">
+                        AI reconciliation report
+                        <span
+                            v-if="reportAiMode"
+                            class="ml-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                            :class="reportAiMode === 'demo'
+                                ? 'bg-fg-warning-15 text-fg-warning-text'
+                                : 'bg-fg-positive-15 text-fg-positive-dark'"
+                        >
+                            {{ reportAiMode === 'demo' ? 'Demo response' : 'Live AI' }}
+                        </span>
+                    </h3>
                     <p class="text-xs text-fg-mid-grey">
                         Generate a report directly from the parsed proposals. Confirmed proposals are included in the
                         calculations; excluded and unresolved records are listed for review.
